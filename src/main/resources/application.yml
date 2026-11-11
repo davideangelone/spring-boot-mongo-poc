@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: mongo-user-items-poc
+  mongodb:
+    uri: ${MONGODB_URI:mongodb://root:example@localhost:27017/test?authSource=admin}
+  data:
+    mongodb:
+      auto-index-creation: true
+
+server:
+  port: 8080
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+  api-docs:
+    path: /v3/api-docs
