@@ -65,7 +65,7 @@ Su Windows è disponibile anche lo script:
 start.bat
 ```
 
-Il servizio MongoDB espone la porta `27017` con credenziali di default configurate in `docker-compose.yml` (`root` / `example`, database iniziale `test`). I dati sono persistiti nel percorso locale `.docker2` (bind mount).
+Il servizio MongoDB espone la porta `27017` con credenziali di default configurate in `docker-compose.yml` (`root` / `example`, database iniziale `test`). I dati sono persistiti nel percorso locale `.docker` (bind mount).
 
 ### 2. Avvio dell'applicazione
 Con Maven:
@@ -185,4 +185,4 @@ src/main/java/it/davideangelone/mongopoc/
 - Gli ID degli utenti sono generati da MongoDB; gli ID degli item sono UUID generati dall'applicazione.
 - Il POC non implementa autenticazione/autorizzazione, paginazione, ricerca avanzata o multi-tenancy.
 - Il seed dati è idempotente: se la collection contiene già documenti, non vengono inseriti dati di esempio.
-- Il database utilizza un volume persistente. Per azzerare i dati (operazione distruttiva): `docker compose down -v` ed eliminare, se necessario, la directory `.docker2`.
+- Il database utilizza un volume persistente. Per azzerare i dati (operazione distruttiva): `docker compose down -v` ed eliminare, se necessario, la directory `.docker`.
