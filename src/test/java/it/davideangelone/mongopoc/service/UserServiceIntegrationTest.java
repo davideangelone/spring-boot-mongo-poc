@@ -37,7 +37,7 @@ class UserServiceIntegrationTest {
 
     @Container
     @ServiceConnection
-    static MongoDBContainer mongo = new MongoDBContainer("mongo:latest");
+    static MongoDBContainer mongo = new MongoDBContainer("mongo:9.0.8");
 
     @Autowired
     UserService service;
