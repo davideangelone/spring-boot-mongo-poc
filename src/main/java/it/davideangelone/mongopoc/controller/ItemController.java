@@ -3,7 +3,7 @@ package it.davideangelone.mongopoc.controller;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import it.davideangelone.mongopoc.dto.ItemRequest;
-import it.davideangelone.mongopoc.model.UserItem;
+import it.davideangelone.mongopoc.dto.ItemResponse;
 import it.davideangelone.mongopoc.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -20,26 +20,31 @@ public class ItemController {
 
     @GetMapping
     @Operation(summary = "Elenca gli item dell'utente")
-    public List<UserItem> findAll(@PathVariable String userId) { return service.findItems(userId); }
+    public List<ItemResponse> findAll(@PathVariable String userId) {
+        return service.findItems(userId)
+                .stream()
+                .map(ItemResponse::from)
+                .toList();
+    }
 
     @GetMapping("/{itemId}")
     @Operation(summary = "Recupera un item dell'utente")
-    public UserItem findById(@PathVariable String userId, @PathVariable String itemId) {
-        return service.findItem(userId, itemId);
+    public ItemResponse findById(@PathVariable String userId, @PathVariable String itemId) {
+        return ItemResponse.from(service.findItem(userId, itemId));
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(summary = "Crea un item per l'utente")
-    public UserItem create(@PathVariable String userId, @Valid @RequestBody ItemRequest request) {
-        return service.createItem(userId, request);
+    public ItemResponse create(@PathVariable String userId, @Valid @RequestBody ItemRequest request) {
+        return ItemResponse.from(service.createItem(userId, request));
     }
 
     @PutMapping("/{itemId}")
     @Operation(summary = "Aggiorna un item dell'utente")
-    public UserItem update(@PathVariable String userId, @PathVariable String itemId,
-                           @Valid @RequestBody ItemRequest request) {
-        return service.updateItem(userId, itemId, request);
+    public ItemResponse update(@PathVariable String userId, @PathVariable String itemId,
+                               @Valid @RequestBody ItemRequest request) {
+        return ItemResponse.from(service.updateItem(userId, itemId, request));
     }
 
     @DeleteMapping("/{itemId}")

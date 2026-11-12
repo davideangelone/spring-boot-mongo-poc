@@ -120,11 +120,13 @@ mvn spring-boot:run
 ```
 
 ## Esecuzione dei test
-I test di integrazione (`UserServiceIntegrationTest`) usano un MongoDB reale (`mongo:8.0`) avviato da Testcontainers con `@ServiceConnection`, quindi richiedono Docker in esecuzione ma non il `docker-compose.yml`. Ogni test crea utenti con email univoche e non dipende dal seed iniziale.
+I test di integrazione (`UserServiceIntegrationTest`) usano un MongoDB reale (`mongo:latest`) avviato da Testcontainers con `@ServiceConnection`, quindi richiedono Docker in esecuzione ma non il `docker-compose.yml`. Ogni test crea utenti con email univoche e non dipende dal seed iniziale.
 
 ```bash
 mvn test
 ```
+
+`ResponseMappingTest` verifica invece il mapping delle entity nei DTO di risposta (`UserResponse`, `ItemResponse`) ed è un normale test unitario: non richiede Docker. Le risposte dell'API non espongono direttamente i documenti MongoDB, quindi il modello di persistenza può cambiare senza modificare il contratto JSON.
 
 Coprono, tra l'altro, la creazione concorrente di item sullo stesso utente (nessun item perso), l'aggiornamento di un utente in parallelo alla creazione di item, la conservazione di `id` e `createdAt` in `updateItem`, i casi `404` e il rifiuto di un salvataggio o di una cancellazione basati su una versione obsoleta del documento.
 
@@ -200,7 +202,9 @@ src/main/java/it/davideangelone/mongopoc/
 │   └── ItemController.java          # Endpoint REST per item utente
 ├── dto/
 │   ├── UserRequest.java             # Payload input utente con validazione
-│   └── ItemRequest.java             # Payload input item con validazione
+│   ├── ItemRequest.java             # Payload input item con validazione
+│   ├── UserResponse.java            # Risposta utente (record con from(User))
+│   └── ItemResponse.java            # Risposta item (record con from(UserItem))
 ├── exception/
 │   ├── ApiExceptionHandler.java     # Gestione centralizzata errori HTTP
 │   └── ResourceNotFoundException.java
@@ -213,6 +217,8 @@ src/main/java/it/davideangelone/mongopoc/
     └── UserService.java             # Logica applicativa utenti e item (con @Retryable sui conflitti)
 
 src/test/java/it/davideangelone/mongopoc/
+├── dto/
+│   └── ResponseMappingTest.java          # Test unitari del mapping entity -> DTO (senza Docker)
 └── service/
     └── UserServiceIntegrationTest.java   # Test di integrazione con Testcontainers (MongoDB)
 ```

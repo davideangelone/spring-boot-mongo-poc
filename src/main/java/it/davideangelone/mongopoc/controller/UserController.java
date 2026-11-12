@@ -3,7 +3,7 @@ package it.davideangelone.mongopoc.controller;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import it.davideangelone.mongopoc.dto.UserRequest;
-import it.davideangelone.mongopoc.model.User;
+import it.davideangelone.mongopoc.dto.UserResponse;
 import it.davideangelone.mongopoc.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -20,21 +20,27 @@ public class UserController {
 
     @GetMapping
     @Operation(summary = "Elenca tutti gli utenti con i rispettivi item")
-    public List<User> findAll() { return service.findAllUsers(); }
+    public List<UserResponse> findAll() {
+        return service.findAllUsers().stream().map(UserResponse::from).toList();
+    }
 
     @GetMapping("/{userId}")
     @Operation(summary = "Recupera un utente")
-    public User findById(@PathVariable String userId) { return service.findUser(userId); }
+    public UserResponse findById(@PathVariable String userId) {
+        return UserResponse.from(service.findUser(userId));
+    }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(summary = "Crea un utente")
-    public User create(@Valid @RequestBody UserRequest request) { return service.createUser(request); }
+    public UserResponse create(@Valid @RequestBody UserRequest request) {
+        return UserResponse.from(service.createUser(request));
+    }
 
     @PutMapping("/{userId}")
     @Operation(summary = "Aggiorna nome ed email di un utente")
-    public User update(@PathVariable String userId, @Valid @RequestBody UserRequest request) {
-        return service.updateUser(userId, request);
+    public UserResponse update(@PathVariable String userId, @Valid @RequestBody UserRequest request) {
+        return UserResponse.from(service.updateUser(userId, request));
     }
 
     @DeleteMapping("/{userId}")
