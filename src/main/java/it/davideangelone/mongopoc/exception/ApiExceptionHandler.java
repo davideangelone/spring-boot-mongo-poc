@@ -1,5 +1,6 @@
 package it.davideangelone.mongopoc.exception;
 
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -28,5 +29,11 @@ public class ApiExceptionHandler {
     ProblemDetail handleOptimisticLock(OptimisticLockingFailureException ex) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT,
                 "La risorsa è stata modificata da un'altra richiesta: riprova");
+    }
+
+    @ExceptionHandler(DuplicateKeyException.class)
+    ProblemDetail handleDuplicateKey(DuplicateKeyException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT,
+                "La risorsa esiste già: modifica i dati o scegli un valore diverso");
     }
 }

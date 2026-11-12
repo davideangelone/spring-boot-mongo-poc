@@ -39,7 +39,7 @@ public class UserService {
     }
 
     public User createUser(UserRequest request) {
-        User user = new User(null, request.name(), request.email(), List.of());
+        User user = new User(null, request.name(), request.email(), null);
         return repository.save(user);
     }
 
