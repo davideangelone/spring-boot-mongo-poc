@@ -10,10 +10,19 @@ import it.davideangelone.mongopoc.exception.ResourceNotFoundException;
 import it.davideangelone.mongopoc.model.User;
 import it.davideangelone.mongopoc.model.UserItem;
 import it.davideangelone.mongopoc.repository.UserRepository;
+import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.resilience.annotation.Retryable;
 import org.springframework.stereotype.Service;
 
 @Service
 public class UserService {
+
+    // Gli item sono embedded nel documento User: le operazioni sugli item, updateUser e deleteUser
+    // leggono il documento, lo modificano e lo salvano. Se nel frattempo un'altra richiesta ha scritto lo
+    // stesso utente, @Version fa fallire il save() con OptimisticLockingFailureException e il metodo
+    // viene rieseguito da capo (rilettura inclusa). Esauriti i tentativi, l'eccezione arriva
+    // all'ApiExceptionHandler, che risponde 409. Il retry funziona solo se il metodo è chiamato
+    // dall'esterno del bean (tramite proxy), non con una chiamata interna alla classe.
 
     private final UserRepository repository;
 
@@ -34,6 +43,7 @@ public class UserService {
         return repository.save(user);
     }
 
+    @Retryable(includes = OptimisticLockingFailureException.class, maxRetries = 5, delay = 20, jitter = 20)
     public User updateUser(String userId, UserRequest request) {
         User user = getUser(userId);
         user.setName(request.name());
@@ -42,6 +52,7 @@ public class UserService {
         return repository.save(user);
     }
 
+    @Retryable(includes = OptimisticLockingFailureException.class, maxRetries = 5, delay = 20, jitter = 20)
     public void deleteUser(String userId) {
         User user = getUser(userId);
         repository.delete(user);
@@ -55,6 +66,7 @@ public class UserService {
         return getItem(getUser(userId), itemId);
     }
 
+    @Retryable(includes = OptimisticLockingFailureException.class, maxRetries = 5, delay = 20, jitter = 20)
     public UserItem createItem(String userId, ItemRequest request) {
         User user = getUser(userId);
 
@@ -65,6 +77,7 @@ public class UserService {
         return item;
     }
 
+    @Retryable(includes = OptimisticLockingFailureException.class, maxRetries = 5, delay = 20, jitter = 20)
     public UserItem updateItem(String userId, String itemId, ItemRequest request) {
         User user = getUser(userId);
         UserItem existingItem = getItem(user, itemId);
@@ -85,6 +98,7 @@ public class UserService {
         return updatedItem;
     }
 
+    @Retryable(includes = OptimisticLockingFailureException.class, maxRetries = 5, delay = 20, jitter = 20)
     public void deleteItem(String userId, String itemId) {
         User user = getUser(userId);
         UserItem item = getItem(user, itemId);

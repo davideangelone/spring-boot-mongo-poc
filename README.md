@@ -11,10 +11,13 @@ Proof of Concept (POC) di un'API REST CRUD basata su **Java 21**, **Spring Boot 
 - Gestione centralizzata degli errori HTTP con `ProblemDetail`:
   - `404 Not Found` per risorse inesistenti.
   - `400 Bad Request` per errori di validazione.
+  - `409 Conflict` quando una modifica concorrente sullo stesso utente non si risolve dopo i tentativi automatici (vedi [Gestione della concorrenza](#gestione-della-concorrenza)).
   - `201 Created` per le creazioni.
   - `204 No Content` per le cancellazioni.
 - Documentazione e test manuale degli endpoint tramite Swagger UI.
 - Auditing MongoDB abilitato (`@CreatedDate`, `@LastModifiedDate`, `@Version`).
+- Gestione della concorrenza con optimistic locking (`@Version`) e retry automatico (`@Retryable`) sulle operazioni di modifica e cancellazione.
+- Test di integrazione su un MongoDB reale avviato da Testcontainers.
 - Popolamento iniziale del database al primo avvio (solo se la collection è vuota), con utenti e item di esempio di tipologie diverse (`TASK`, `EXPENSE`, `RECIPE`, `NOTE`, `TRAVEL`).
 
 ## Modello dati
@@ -38,10 +41,22 @@ users (collection)
 
 Questa struttura è adatta al POC perché lettura e scrittura avvengono insieme al documento padre. In scenari con molti item per utente, aggiornamenti concorrenti frequenti o query indipendenti sugli item, può essere preferibile una collection separata con riferimento all'utente.
 
+## Gestione della concorrenza
+Poiché gli item sono embedded, creare, modificare o cancellare un item significa leggere il documento `User`, modificarne la lista e salvarlo di nuovo. Due richieste concorrenti sullo stesso utente rischiano quindi di sovrascriversi.
+
+La protezione si basa su due meccanismi:
+
+1. **Optimistic locking**: il campo `version` (`@Version`) fa fallire il `save()` con `OptimisticLockingFailureException` se il documento è stato modificato da un'altra richiesta dopo la lettura. L'aggiornamento di una versione obsoleta viene rifiutato, non sovrascritto in silenzio.
+2. **Retry automatico**: i metodi di `UserService` che modificano o cancellano un utente o i suoi item (`updateUser`, `deleteUser`, `createItem`, `updateItem`, `deleteItem`) sono annotati con `@Retryable` (Spring Framework 7, abilitato in `ResilienceConfig` con `@EnableResilientMethods`). In caso di conflitto il metodo viene rieseguito da capo, rileggendo il documento, fino a 5 volte con una breve attesa casuale (20 ms più un jitter fino a 20 ms).
+
+Se il conflitto persiste dopo i tentativi, l'API risponde `409 Conflict` e il client può ripetere la richiesta.
+
+Il `UserService` usa solo `UserRepository`: non ci sono accessi diretti a `MongoTemplate`. Il retry funziona solo quando il metodo è invocato dall'esterno del bean (tramite il proxy di Spring), non con una chiamata interna alla stessa classe.
+
 ## Requisiti tecnici
 - **JDK**: 21 o superiore
 - **Maven**: 3.9 o superiore
-- **Docker** e **Docker Compose**: per l'esecuzione di MongoDB
+- **Docker** e **Docker Compose**: per l'esecuzione di MongoDB e per i test di integrazione (Testcontainers)
 - **MongoDB**: immagine `mongo:latest` avviata tramite `docker-compose.yml`
 - **Spring Boot**: 4.1.2 (parent Maven)
 - **Librerie principali**:
@@ -49,6 +64,11 @@ Questa struttura è adatta al POC perché lettura e scrittura avvengono insieme 
   - `spring-boot-starter-data-mongodb`
   - `spring-boot-starter-validation`
   - `springdoc-openapi-starter-webmvc-ui` (3.2.0)
+- **Librerie di test**:
+  - `spring-boot-starter-test`
+  - `spring-boot-testcontainers`
+  - `testcontainers-junit-jupiter`
+  - `testcontainers-mongodb`
 
 ## Installazione e avvio
 
@@ -99,6 +119,17 @@ set MONGODB_URI=mongodb://utente:password@host:27017/nome_db?authSource=admin
 mvn spring-boot:run
 ```
 
+## Esecuzione dei test
+I test di integrazione (`UserServiceIntegrationTest`) usano un MongoDB reale (`mongo:8.0`) avviato da Testcontainers con `@ServiceConnection`, quindi richiedono Docker in esecuzione ma non il `docker-compose.yml`. Ogni test crea utenti con email univoche e non dipende dal seed iniziale.
+
+```bash
+mvn test
+```
+
+Coprono, tra l'altro, la creazione concorrente di item sullo stesso utente (nessun item perso), l'aggiornamento di un utente in parallelo alla creazione di item, la conservazione di `id` e `createdAt` in `updateItem`, i casi `404` e il rifiuto di un salvataggio o di una cancellazione basati su una versione obsoleta del documento.
+
+I test concorrenti usano 5 richieste simultanee sullo stesso utente: ogni richiesta può perdere al massimo una volta contro ciascuna delle altre, quindi i 5 ritentativi di `@Retryable` bastano sempre e l'esito è deterministico. Con molte più richieste simultanee sullo stesso utente un `409` sarebbe possibile.
+
 ## Modalità di utilizzo
 
 ### Documentazione API (Swagger UI)
@@ -114,8 +145,8 @@ Da Swagger UI è possibile esplorare e invocare direttamente tutti gli endpoint.
 | `GET` | `/api/users` | Elenca tutti gli utenti con i rispettivi item | `200 OK` |
 | `GET` | `/api/users/{userId}` | Recupera un utente per ID | `200 OK` / `404` |
 | `POST` | `/api/users` | Crea un nuovo utente | `201 Created` |
-| `PUT` | `/api/users/{userId}` | Aggiorna nome ed email dell'utente | `200 OK` / `404` |
-| `DELETE` | `/api/users/{userId}` | Elimina l'utente e tutti i suoi item | `204 No Content` / `404` |
+| `PUT` | `/api/users/{userId}` | Aggiorna nome ed email dell'utente | `200 OK` / `404` / `409` |
+| `DELETE` | `/api/users/{userId}` | Elimina l'utente e tutti i suoi item | `204 No Content` / `404` / `409` |
 
 Esempio richiesta `POST /api/users`:
 
@@ -134,9 +165,9 @@ Vincoli `UserRequest`: `name` obbligatorio (max 100 caratteri), `email` obbligat
 |---|---|---|---|
 | `GET` | `/api/users/{userId}/items` | Elenca gli item dell'utente | `200 OK` / `404` |
 | `GET` | `/api/users/{userId}/items/{itemId}` | Recupera un item specifico | `200 OK` / `404` |
-| `POST` | `/api/users/{userId}/items` | Crea un item per l'utente | `201 Created` / `404` |
-| `PUT` | `/api/users/{userId}/items/{itemId}` | Aggiorna un item (mantiene `id` e `createdAt` originali) | `200 OK` / `404` |
-| `DELETE` | `/api/users/{userId}/items/{itemId}` | Elimina un item dell'utente | `204 No Content` / `404` |
+| `POST` | `/api/users/{userId}/items` | Crea un item per l'utente | `201 Created` / `404` / `409` |
+| `PUT` | `/api/users/{userId}/items/{itemId}` | Aggiorna un item (mantiene `id` e `createdAt` originali) | `200 OK` / `404` / `409` |
+| `DELETE` | `/api/users/{userId}/items/{itemId}` | Elimina un item dell'utente | `204 No Content` / `404` / `409` |
 
 Esempio richiesta `POST /api/users/{userId}/items`:
 
@@ -162,7 +193,8 @@ src/main/java/it/davideangelone/mongopoc/
 ├── config/
 │   ├── DataInitializer.java         # Seed iniziale dei dati (CommandLineRunner)
 │   ├── MongoConfig.java             # Abilitazione auditing MongoDB
-│   └── OpenApiConfig.java           # Configurazione OpenAPI/Swagger
+│   ├── OpenApiConfig.java           # Configurazione OpenAPI/Swagger
+│   └── ResilienceConfig.java        # Abilitazione di @Retryable (@EnableResilientMethods)
 ├── controller/
 │   ├── UserController.java          # Endpoint REST per utenti
 │   └── ItemController.java          # Endpoint REST per item utente
@@ -178,11 +210,17 @@ src/main/java/it/davideangelone/mongopoc/
 ├── repository/
 │   └── UserRepository.java          # MongoRepository<User, String>
 └── service/
-    └── UserService.java             # Logica applicativa utenti e item
+    └── UserService.java             # Logica applicativa utenti e item (con @Retryable sui conflitti)
+
+src/test/java/it/davideangelone/mongopoc/
+└── service/
+    └── UserServiceIntegrationTest.java   # Test di integrazione con Testcontainers (MongoDB)
 ```
 
 ## Note e limitazioni
 - Gli ID degli utenti sono generati da MongoDB; gli ID degli item sono UUID generati dall'applicazione.
 - Il POC non implementa autenticazione/autorizzazione, paginazione, ricerca avanzata o multi-tenancy.
+- La gestione della concorrenza è per documento utente: modifiche simultanee su utenti diversi non interferiscono, mentre su uno stesso utente le richieste si serializzano tramite retry. Con carichi molto concorrenti sullo stesso utente il retry riscrive ogni volta l'intero documento e può terminare in `409`: in quel caso conviene passare a operazioni di update atomiche (`$push`, `$pull`) o a una collection separata per gli item.
+- `updateItem` sostituisce l'item rimuovendolo e aggiungendolo di nuovo: l'item modificato finisce in fondo alla lista.
 - Il seed dati è idempotente: se la collection contiene già documenti, non vengono inseriti dati di esempio.
 - Il database utilizza un volume persistente. Per azzerare i dati (operazione distruttiva): `docker compose down -v` ed eliminare, se necessario, la directory `.docker`.
